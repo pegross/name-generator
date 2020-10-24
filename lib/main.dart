@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:english_words/english_words.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() => runApp(MyApp());
 
@@ -26,41 +27,80 @@ class RandomWords extends StatefulWidget {
 }
 
 class _RandomWordsState extends State<RandomWords> {
-  final _suggestions = <WordPair>[];
-  final _saved = Set<WordPair>();
+  final _suggestions = List<String>();
   final _biggerFont = TextStyle(fontSize: 18.0);
+  var _saved = List<String>();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSaved();
+  }
+
+  _loadSaved() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _saved = (prefs.getStringList('saved') ?? []);
+    });
+  }
+
+  _addSaved(String entryName) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _saved.add(entryName);
+      prefs.setStringList('saved', _saved);
+    });
+  }
+
+  _removeSaved(String entryName) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _saved.remove(entryName);
+      prefs.setStringList('saved', _saved);
+    });
+  }
 
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Startup Name Generator'),
-        actions: [IconButton(icon: Icon(Icons.list), onPressed: _pushSaved)],
+        actions: [
+          IconButton(icon: Icon(Icons.list), onPressed: _navigateToSaved)
+        ],
       ),
       body: _buildSuggestions(),
     );
   }
 
-  void _pushSaved() {
+  void _navigateToSaved() {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (BuildContext context) {
-        final tiles = _saved.map((WordPair pair) {
-          return ListTile(
-              title: Text(
-            pair.asPascalCase,
-            style: _biggerFont,
-          ));
-        });
-
-        final divided = ListTile.divideTiles(
-          context: context,
-          tiles: tiles,
-        ).toList();
-
         return Scaffold(
           appBar: AppBar(
             title: Text('Saved Suggestions'),
           ),
-          body: ListView(children: divided),
+          body: ListView.builder(
+            itemCount: _saved.length,
+            itemBuilder: (context, index) {
+              final item = _saved[index];
+
+              return Dismissible(
+                key: Key(item),
+
+                onDismissed: (direction) {
+                  setState(() {
+                    _removeSaved(item);
+                  });
+
+                  Scaffold.of(context)
+                      .showSnackBar(SnackBar(content: Text("$item dismissed")));
+                },
+                // Show a red background as the item is swiped away.
+                background: Container(color: Colors.red),
+                child: ListTile(title: Text('$item', style: _biggerFont)),
+              );
+            },
+          ),
         );
       },
     ));
@@ -74,17 +114,18 @@ class _RandomWordsState extends State<RandomWords> {
 
           final index = i ~/ 2;
           if (index >= _suggestions.length) {
-            _suggestions.addAll(generateWordPairs().take(10));
+            _suggestions.addAll(
+                generateWordPairs().take(10).map((pair) => pair.asPascalCase));
           }
           return _buildRow(_suggestions[index]);
         });
   }
 
-  Widget _buildRow(WordPair pair) {
-    final alreadySaved = _saved.contains(pair);
+  Widget _buildRow(String entryName) {
+    final alreadySaved = _saved.contains(entryName);
     return ListTile(
       title: Text(
-        pair.asPascalCase,
+        entryName,
         style: _biggerFont,
       ),
       trailing: Icon(
@@ -93,7 +134,7 @@ class _RandomWordsState extends State<RandomWords> {
       ),
       onTap: () {
         setState(() {
-          alreadySaved ? _saved.remove(pair) : _saved.add(pair);
+          alreadySaved ? _removeSaved(entryName) : _addSaved(entryName);
         });
       },
     );
